@@ -1,0 +1,56 @@
+
+$ErrorActionPreference = "Stop"
+
+# 1. 确认源码目录
+if (!(Test-Path ".\mail-worker") -or !(Test-Path ".\mail-vue")) {
+    throw "当前目录不是 Cloud Mail 项目根目录"
+}
+
+# 2. 初始化 Git 仓库（解决 not a git repository）
+git init
+if ($LASTEXITCODE -ne 0) { throw "Git 初始化失败" }
+
+# 3. 设置 main 主分支
+git branch -M main
+
+# 4. 配置你的目标仓库
+$repo = "https://github.com/imylhbot/CSmail.git"
+
+git remote get-url origin *> $null
+if ($LASTEXITCODE -eq 0) {
+    git remote set-url origin $repo
+} else {
+    git remote add origin $repo
+}
+
+# 5. 添加全部源码并提交
+git add -A
+if ($LASTEXITCODE -ne 0) { throw "Git 添加文件失败" }
+
+git commit -m "Deploy complete Cloud Mail source"
+if ($LASTEXITCODE -ne 0) {
+    throw "Git 提交失败，请检查 user.name 和 user.email"
+}
+
+# 6. 获取远程最新状态
+git fetch origin main
+if ($LASTEXITCODE -ne 0) { throw "获取远程分支失败" }
+
+# 7. 备份原远程 main 分支
+$oldMain = git rev-parse refs/remotes/origin/main
+$backup = "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+
+git push origin "${oldMain}:refs/heads/$backup"
+if ($LASTEXITCODE -ne 0) {
+    throw "远程备份失败，为安全起见已停止覆盖"
+}
+
+# 8. 用本地完整源码替换远程 main
+git push -u origin main --force-with-lease
+if ($LASTEXITCODE -ne 0) {
+    throw "推送失败，远程 main 未被覆盖"
+}
+
+Write-Host "上传成功！" -ForegroundColor Green
+Write-Host "仓库：https://github.com/imylhbot/CSmail"
+Write-Host "旧版本备份分支：$backup"
