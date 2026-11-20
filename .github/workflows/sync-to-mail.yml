@@ -1,0 +1,60 @@
+name: Sync CSMail to mail
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csmail-to-mail-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'imylhbot/CSmail'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check sync token
+        env:
+          SYNC_TOKEN: ${{ secrets.MAIL_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::Missing MAIL_SYNC_TOKEN secret in imylhbot/CSmail"
+            exit 1
+          fi
+
+      - name: Checkout source main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Backup target main and sync
+        shell: bash
+        env:
+          SYNC_TOKEN: ${{ secrets.MAIL_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          git remote add target "https://x-access-token:${SYNC_TOKEN}@github.com/imylhbot/mail.git"
+          git fetch --no-tags target main
+          target_sha="$(git rev-parse FETCH_HEAD)"
+          source_sha="$(git rev-parse HEAD)"
+
+          if [ "$target_sha" = "$source_sha" ]; then
+            echo "Target is already synchronized: $source_sha"
+            exit 0
+          fi
+
+          # Retain the original target branch on its first synchronization.
+          if ! git ls-remote --exit-code --heads target backup-before-sync >/dev/null 2>&1; then
+            git push target "$target_sha:refs/heads/backup-before-sync"
+            echo "Created backup-before-sync at $target_sha"
+          fi
+
+          # Do not overwrite main if it changed since the fetch.
+          git push --force-with-lease="refs/heads/main:$target_sha" target "HEAD:refs/heads/main"
+          echo "Synced imylhbot/mail main to $source_sha"
